@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buttr Shield</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #18202a; --line: #2a3441;
+    --text: #e6edf3; --muted: #8b98a5;
+    --green: #2ea043; --orange: #f0883e; --red: #f85149;
+    --yellow: #d29922; --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 14px; }
+  header { display: flex; justify-content: space-between; align-items: center;
+           padding: 16px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 20px; }
+  header small { color: var(--muted); }
+  main { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+           gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 10px; padding: 14px 16px; }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  .card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .sev-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  section { background: var(--card); border: 1px solid var(--line);
+            border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+  section h2 { margin: 0 0 12px; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-size: 12px;
+       text-transform: uppercase; padding: 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #1f2933; }
+  tr.selected td { background: #22303f; }
+  .wrap { overflow-x: auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px;
+           font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .sev-critical { background: rgba(248,81,73,.2); color: var(--red); }
+  .sev-high { background: rgba(240,136,62,.2); color: var(--orange); }
+  .sev-medium { background: rgba(210,153,34,.2); color: var(--yellow); }
+  .sev-low { background: rgba(46,160,67,.2); color: var(--green); }
+  .act-block, .act-restrict { color: var(--red); }
+  .act-rate_limit { color: var(--orange); }
+  .act-flag { color: var(--yellow); }
+  .st-active { color: var(--red); font-weight: 600; }
+  .st-recovered { color: var(--green); }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); padding: 12px 8px; }
+  .reason { max-width: 520px; }
+  .detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin-bottom: 12px; }
+  .detail-grid div:nth-child(odd) { color: var(--muted); }
+  .why { background: #101820; border-left: 3px solid var(--blue);
+         padding: 10px 12px; border-radius: 4px; margin: 10px 0 14px; }
+  textarea { width: 100%; background: #101820; color: var(--text);
+             border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 50px; }
+  button { background: #263241; color: var(--text); border: 1px solid var(--line);
+           padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #2f3d50; }
+  button.danger { border-color: var(--red); color: var(--red); }
+  button.safe { border-color: var(--green); color: var(--green); }
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🛡️ Buttr Shield</h1>
+    <small>Abuse &amp; attack protection dashboard</small>
+  </div>
+  <div>
+    <small id="updated">loading...</small>
+    <button id="resetBtn" class="danger" style="margin-left:12px">Reset demo data</button>
+  </div>
+</header>
+
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">Events seen</div><div class="value" id="c-events">0</div></div>
+    <div class="card"><div class="label">Incidents</div><div class="value" id="c-incidents">0</div>
+      <div class="sev-row" id="c-sev"></div></div>
+    <div class="card"><div class="label">Awaiting review</div><div class="value" id="c-open">0</div></div>
+    <div class="card"><div class="label">Active protections</div><div class="value" id="c-prot">0</div></div>
+  </div>
+
+  <section>
+    <h2>🛡️ Active protections (current threats)</h2>
+    <div class="wrap" id="protections"></div>
+  </section>
+
+  <section>
+    <h2>🚨 Incidents (click a row for details)</h2>
+    <div class="wrap" id="incidents"></div>
+  </section>
+
+  <section id="detailBox" style="display:none">
+    <h2>🔍 Incident details</h2>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<script>
+  let serverNow = Date.now() / 1000;
+  let selectedId = null;
+
+  // Escape text before putting it into HTML. Usernames and IPs come from
+  // outside, so they must never be inserted as raw HTML.
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, ch => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
+    ));
+  }
+
+  async function api(path, options) {
+    const res = await fetch(path, options);
+    return res.json();
+  }
+
+  function fmtTime(ts) {
+    return ts ? new Date(ts * 1000).toLocaleTimeString() : "-";
+  }
+
+  function sevBadge(sev) {
+    return `<span class="badge sev-${esc(sev)}">${esc(sev)}</span>`;
+  }
+
+  const ACTION_LABELS = {
+    rate_limit: "🟠 Rate limited",
+    block: "🔴 Blocked",
+    restrict: "🔴 Restricted",
+    flag: "🟡 Flagged",
+  };
+
+  function actionLabel(action) {
+    return `<span class="act-${esc(action)}">${ACTION_LABELS[action] || esc(action)}</span>`;
+  }
+
+  function incidentState(inc) {
+    if (inc.recovered_at) return `<span class="st-recovered">recovered</span>`;
+    if (inc.expires_at && inc.expires_at <= serverNow) return `<span class="muted">expired</span>`;
+    return `<span class="st-active">active</span>`;
+  }
+
+  function reviewLabel(inc) {
+    if (inc.review_status !== "reviewed") return `<span class="muted">needs review</span>`;
+    return inc.review_verdict === "real_attack" ? "✅ real attack" : "⚪ false alarm";
+  }
+
+  function renderStats(s) {
+    serverNow = s.server_time;
+    document.getElementById("c-events").textContent = s.total_events;
+    document.getElementById("c-incidents").textContent = s.total_incidents;
+    document.getElementById("c-open").textContent = s.open_incidents;
+    document.getElementById("c-prot").textContent = s.active_protections;
+    document.getElementById("c-sev").innerHTML = ["critical", "high", "medium", "low"]
+      .map(k => `<span class="badge sev-${k}">${k}: ${s.by_severity[k] || 0}</span>`).join("");
+  }
+
+  function renderProtections(list) {
+    const box = document.getElementById("protections");
+    if (!list.length) {
+      box.innerHTML = `<div class="empty">🟢 No active threats. Everything is normal.</div>`;
+      return;
+    }
+    const rows = list.map(p => `
+      <tr>
+        <td>${esc(p.subject_type)}</td>
+        <td><b>${esc(p.subject)}</b></td>
+        <td>${actionLabel(p.action)}</td>
+        <td>${Math.max(0, Math.round(p.expires_at - serverNow))}s</td>
+        <td>#${esc(p.incident_id)}</td>
+      </tr>`).join("");
+    box.innerHTML = `<table>
+      <tr><th>Type</th><th>Subject</th><th>Action</th><th>Lifts in</th><th>Incident</th></tr>
+      ${rows}</table>`;
+  }
+
+  function renderIncidents(list) {
+    const box = document.getElementById("incidents");
+    if (!list.length) {
+      box.innerHTML = `<div class="empty">No incidents recorded yet.</div>`;
+      return;
+    }
+    const rows = list.map(i => `
+      <tr class="clickable ${i.id === selectedId ? "selected" : ""}" data-id="${i.id}">
+        <td>#${i.id}</td>
+        <td>${fmtTime(i.created_at)}</td>
+        <td>${sevBadge(i.severity)} <span class="muted">${i.risk_score}</span></td>
+        <td>${esc(i.attack_type)}</td>
+        <td>${esc(i.subject_type)}: <b>${esc(i.subject)}</b></td>
+        <td>${actionLabel(i.action)}</td>
+        <td>${incidentState(i)}</td>
+        <td>${reviewLabel(i)}</td>
+        <td class="reason">${esc(i.reason)}</td>
+      </tr>`).join("");
+    box.innerHTML = `<table>
+      <tr><th>ID</th><th>Time</th><th>Severity</th><th>Type</th><th>Subject</th>
+          <th>Action</th><th>Status</th><th>Review</th><th>Why it was flagged</th></tr>
+      ${rows}</table>`;
+    box.querySelectorAll("tr.clickable").forEach(row => {
+      row.addEventListener("click", () => showDetail(Number(row.dataset.id)));
+    });
+  }
+
+  async function showDetail(id) {
+    selectedId = id;
+    const inc = await api(`/api/incidents/${id}`);
+    const events = (inc.events || []).map(e => `
+      <tr>
+        <td>${fmtTime(e.ts)}</td><td>${esc(e.event_type)}</td>
+        <td>${esc(e.user_id)}</td><td>${esc(e.ip)}</td><td>${esc(e.device)}</td>
+      </tr>`).join("");
+
+    document.getElementById("detail").innerHTML = `
+      <div class="detail-grid">
+        <div>Incident</div><div>#${inc.id}</div>
+        <div>Attack type</div><div>${esc(inc.attack_type)}</div>
+        <div>Severity</div><div>${sevBadge(inc.severity)} (risk score ${inc.risk_score}/100)</div>
+        <div>Subject</div><div>${esc(inc.subject_type)}: <b>${esc(inc.subject)}</b></div>
+        <div>Action taken</div><div>${actionLabel(inc.action)}</div>
+        <div>Detected at</div><div>${fmtTime(inc.created_at)}</div>
+        <div>Protection ends</div><div>${fmtTime(inc.expires_at)}</div>
+        <div>Status</div><div>${incidentState(inc)}</div>
+      </div>
+      <div class="why"><b>Why it was flagged:</b><br>${esc(inc.reason)}</div>
+      <h2>Evidence (${(inc.events || []).length} events)</h2>
+      <div class="wrap" style="max-height:240px;overflow-y:auto">
+        <table><tr><th>Time</th><th>Event</th><th>Account</th><th>IP</th><th>Device</th></tr>
+        ${events || `<tr><td colspan="5" class="empty">No evidence stored.</td></tr>`}</table>
+      </div>
+      <h2 style="margin-top:16px">Admin review</h2>
+      <div>Current review: ${reviewLabel(inc)} ${inc.review_note ? "- " + esc(inc.review_note) : ""}</div>
+      <textarea id="note" placeholder="Optional note..."></textarea>
+      <div class="btn-row">
+        <button class="danger" id="btnReal">✅ Real attack</button>
+        <button class="safe" id="btnFalse">⚪ False alarm</button>
+      </div>`;
+    document.getElementById("detailBox").style.display = "block";
+    document.getElementById("btnReal").onclick = () => submitReview(id, "real_attack");
+    document.getElementById("btnFalse").onclick = () => submitReview(id, "false_alarm");
+    document.getElementById("detailBox").scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function submitReview(id, verdict) {
+    await api(`/api/incidents/${id}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verdict, note: document.getElementById("note").value }),
+    });
+    await showDetail(id);
+    refresh();
+  }
+
+  async function refresh() {
+    try {
+      const [stats, incidents, protections] = await Promise.all([
+        api("/api/stats"), api("/api/incidents?limit=200"), api("/api/protections"),
+      ]);
+      renderStats(stats);
+      renderProtections(protections);
+      renderIncidents(incidents);
+      document.getElementById("updated").textContent =
+        "Updated " + new Date().toLocaleTimeString();
+    } catch (err) {
+      document.getElementById("updated").textContent = "Server not reachable";
+    }
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", async () => {
+    if (!confirm("Delete all events and incidents?")) return;
+    await api("/api/reset", { method: "POST" });
+    selectedId = null;
+    document.getElementById("detailBox").style.display = "none";
+    refresh();
+  });
+
+  refresh();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html> 
